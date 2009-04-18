@@ -1,93 +1,101 @@
 from collections import defaultdict
 from math import sqrt
 
+def memoize(func):
+    results = {}
+    def wrapper(*args):
+        try:
+            return results[args]
+        except KeyError:
+            results[args] = func(*args)
+            return results[args]
+    return wrapper
+
+def parse():
+    item_count, store_count, gas_price = (int(arg) for arg
+                                          in raw_input().split())
+    item_names, perishables = parse_items()
+    stores = parse_stores(store_count)
+    return gas_price, item_names, perishables, stores
+
+def parse_items():    
+    item_args = raw_input().split()
+    item_names = [arg.rstrip('!') for arg in item_args]
+    perishables = [arg.rstrip('!') for arg in item_args if arg.endswith('!')]
+    return item_names, perishables
+
+def parse_stores(store_count):
+    stores = {}
+    for _ in xrange(store_count):
+        store_args = raw_input().split()
+        pos = int(store_args[0]), int(store_args[1])
+        prices = {}
+        for price_arg in store_args[2:]:
+            item_name, price = price_arg.split(':')
+            prices[item_name] = int(price)
+        stores[pos] = prices
+    return stores
+
+def solve(gas_price, item_names, perishables, stores):
+    def decode_items(items):
+        return (i for i in xrange(len(item_names)) if items & (1 << i))
+
+    @memoize
+    def gas_cost(pos, dest):
+        pos_x, pos_y = pos
+        dest_x, dest_y = dest
+        return gas_price * sqrt((dest_x - pos_x) ** 2
+                                + (dest_y - pos_y) ** 2)
+
+    @memoize
+    def inventory(pos):
+        return sum(1 << i for i, name in enumerate(item_names)
+                   if name in stores[pos])
+
+    @memoize
+    def item_cost(pos, i):
+        return stores[pos][item_names[i]]
+
+    @memoize
+    def perishable(i):
+        return item_names[i] in perishables
+
+    @memoize
+    def min_cost(pos, items, perishing):
+        if not items:
+
+            # We are done shopping.
+            return gas_cost(pos, (0, 0))
+
+        elif perishing:
+
+            # Return to the house...
+            result = gas_cost(pos, (0, 0)) + min_cost((0, 0), items, False)
+
+            # ...or buy something more.
+            for i in decode_items(items & inventory(pos)):
+                cost = (item_cost(pos, i) +
+                        min_cost(pos, items & ~(1 << i), True))
+                result = min(cost, result)
+            return result
+
+        else:
+
+            # Drive to a store and buy something.
+            result = float('inf')
+            for dest in stores:
+                for i in decode_items(items & inventory(dest)):
+                    cost = (gas_cost(pos, dest) + item_cost(dest, i) +
+                            min_cost(dest, items & ~(1 << i), perishable(i)))
+                    result = min(cost, result)
+            return result
+    return min_cost((0, 0), (1 << len(item_names)) - 1, False)
 
 def main():
     for case in xrange(input()):
-
-        itemcount, storecount, gasprice = (int(arg) for arg
-                                           in raw_input().split())
-
-        # Parse items.
-        itemargs = raw_input().split()
-        itemnames = tuple(arg.rstrip('!') for arg in itemargs)
-        perishables = sum(1 << i for i, arg in enumerate(itemargs)
-                          if arg.endswith('!'))
-
-        # Parse stores.
-        positions = []
-        pricelists = []
-        inventories = []
-        for i in xrange(storecount):
-            storeargs = raw_input().split()
-            pos = int(storeargs[0]), int(storeargs[1])
-            prices = {}
-            for pricearg in storeargs[2:]:
-                itemname, pricestr = pricearg.split(':')
-                price = int(pricestr)
-                prices[itemname] = price
-            pricelist = [prices.get(itemname, -1) for itemname in itemnames]
-            inventory = sum(1 << i for i, itemname in enumerate(itemnames)
-                            if itemname in prices)
-            positions.append(pos)
-            pricelists.append(pricelist)
-            inventories.append(inventory)
-        positions.append((0, 0))
-
-        def decodeitems(items):
-            return (i for i in xrange(itemcount) if items & (1 << i))
-
-        # Precalculate gas costs.
-        def gascost(store, dest):
-            storex, storey = positions[store]
-            destx, desty = positions[dest]
-            return gasprice * sqrt((destx - storex) ** 2
-                                   + (desty - storey) ** 2)
-        stores = range(storecount) + [-1]
-        gascosts = [[gascost(store, dest) for dest in stores]
-                    for store in stores]
-
-        # Find the minimum cost using memoization.
-        mincosts = defaultdict(dict)
-        def mincost(store, items, perishing):
-            try:
-                return mincosts[store, perishing][items]
-            except KeyError:
-                if not items:
-
-                    # We are done shopping.
-                    result = gascosts[store][-1]
-
-                elif perishing:
-
-                    # Return to the house...
-                    result = gascosts[store][-1] + mincost(-1, items, False)
-
-                    # ...or buy something more.
-                    for i in decodeitems(items & inventories[store]):
-                        cost = (pricelists[store][i]
-                                + mincost(store, items & ~(1 << i), True))
-                        result = min(cost, result)
-
-                else:
-
-                    # Drive to a store and buy something.
-                    result = None
-                    for dest in xrange(storecount):
-                        for i in decodeitems(items & inventories[dest]):
-                            cost = (gascosts[store][dest]
-                                    + pricelists[dest][i]
-                                    + mincost(dest, items & ~(1 << i),
-                                              bool(perishables & (1 << i))))
-                            if result is None or cost < result:
-                                result = cost
-                    assert result is not None
-
-                mincosts[store, perishing][items] = result
-                return result
-        result = mincost(-1, 2 ** itemcount - 1, False)
+        gas_price, item_names, perishables, stores = parse()
+        result = solve(gas_price, item_names, perishables, stores)
         print 'Case #%d: %.7f' % (case + 1, result)
-
 
 if __name__ == '__main__':
     main()
