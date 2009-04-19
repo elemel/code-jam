@@ -12,25 +12,28 @@ def memoize(func):
     return wrapper
 
 def parse():
-    _, store_count, gas_price = (int(s) for s in raw_input().split())
+    _, store_count, gas_price = (int(arg) for arg in raw_input().split())
     return gas_price, parse_items(), parse_stores(store_count)
 
-def parse_items():    
-    return dict((s.rstrip('!'), s.endswith('!')) for s in raw_input().split())
+def parse_items():
+    return dict((arg.rstrip('!'), arg.endswith('!'))
+                for arg in raw_input().split())
 
 def parse_stores(store_count):
     return dict(parse_store() for _ in xrange(store_count))
 
 def parse_store():
-    store_args = raw_input().split()
-    pos = int(store_args[0]), int(store_args[1])
-    prices = {}
-    for price_arg in store_args[2:]:
-        item_name, price = price_arg.split(':')
-        prices[item_name] = int(price)
+    args = raw_input().split()
+    pos = int(args[0]), int(args[1])
+    prices = dict(parse_price(arg) for arg in args[2:])
     return pos, prices
 
+def parse_price(arg):
+    item_name, price = arg.split(':')
+    return item_name, int(price)
+
 def solve(gas_price, items, stores):
+    home = 0, 0
     item_names = sorted(items)
 
     @memoize
@@ -41,8 +44,8 @@ def solve(gas_price, items, stores):
     def gas_cost(pos, dest):
         pos_x, pos_y = pos
         dest_x, dest_y = dest
-        return gas_price * sqrt((dest_x - pos_x) ** 2
-                                + (dest_y - pos_y) ** 2)
+        return gas_price * sqrt((dest_x - pos_x) ** 2 +
+                                (dest_y - pos_y) ** 2)
 
     @memoize
     def inventory(pos):
@@ -58,35 +61,35 @@ def solve(gas_price, items, stores):
         return items[item_names[i]]
 
     @memoize
-    def min_cost(pos, mask, perishing):
-        if not mask:
-
-            # We are done shopping.
-            return gas_cost(pos, (0, 0))
-
+    def min_cost(pos, remaining, perishing):
+        if not remaining:
+            return gas_cost(pos, home)
         elif perishing:
-
-            # Return to the house...
-            result = gas_cost(pos, (0, 0)) + min_cost((0, 0), mask, False)
-
-            # ...or buy something more.
-            for i in bits(mask & inventory(pos)):
-                cost = (item_cost(pos, i) +
-                        min_cost(pos, mask & ~(1 << i), True))
-                result = min(cost, result)
-            return result
-
+            return min(drop(pos, remaining), buy_more(pos, remaining))
         else:
+            return drive_and_buy(pos, remaining)
 
-            # Drive to a store and buy something.
-            result = float('inf')
-            for dest in stores:
-                for i in bits(mask & inventory(dest)):
-                    cost = (gas_cost(pos, dest) + item_cost(dest, i) +
-                            min_cost(dest, mask & ~(1 << i), perishable(i)))
-                    result = min(cost, result)
-            return result
-    return min_cost((0, 0), (1 << len(item_names)) - 1, False)
+    def drop(pos, remaining):
+        return gas_cost(pos, home) + min_cost(home, remaining, False)
+
+    def buy_more(pos, remaining):
+        result = float('inf')
+        for i in bits(remaining & inventory(pos)):
+            cost = (item_cost(pos, i) +
+                    min_cost(pos, remaining & ~(1 << i), True))
+            result = min(cost, result)
+        return result
+
+    def drive_and_buy(pos, remaining):
+        result = float('inf')
+        for dest in stores:
+            for i in bits(remaining & inventory(dest)):
+                cost = (gas_cost(pos, dest) + item_cost(dest, i) +
+                        min_cost(dest, remaining & ~(1 << i), perishable(i)))
+                result = min(cost, result)
+        return result
+
+    return min_cost(home, (1 << len(item_names)) - 1, False)
 
 def main():
     for case in xrange(input()):
